@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
+const jwt = require("jsonwebtoken")
+const cookieParser = require("cookie-parser")
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -11,15 +13,34 @@ const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster
 
 //middleware
 const corsConfig = {
-  origin: ["http://localhost:5173", "http://localhost:5174"],
+  origin: ["http://localhost:5173", "http://localhost:5174","https://joblelo-78ed0.web.app"],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE"],
 };
 app.use(cors(corsConfig));
-app.options("", cors(corsConfig));
 app.use(express.json());
+app.use(cookieParser())
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+
+//middleware 
+const verifyToken = async(req, res, next) =>{
+  const token = req.cookies?.token
+  console.log('values of token middleware', token);
+  if(!token) {
+    return res.status(401).send({message:"not authorized"})
+  }
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decode) => {
+    if(err) {
+      return res.status(401).send({message:"Unauthorized"})
+    }
+    console.log('values in the token', decode);
+    req.user = decode
+    next()
+  })
+}
+
+
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -35,13 +56,35 @@ async function run() {
     const jobleloCollection = client.db("Joblelo").collection("jobpost");
     const jobAppliedCollection = client.db("Joblelo").collection("AppliedJobs");
     const userCollection = client.db("Joblelo").collection("User");
+
+
+    //auth related data
+    app.post('/jwt',async(req, res)=> {
+      const user = req.body
+      console.log(user);
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn: '6h'})
+      res
+      .cookie('token', token, {
+        httpOnly : true,
+        secure : false,
+        sameSite : 'none'
+      })
+      .send({success:true})
+    })
+
+
+    //services related data
     app.get("/jobpost", async (req, res) => {
       let query = {};
-      // console.log(req.query);
+      // console.log(req.cookies.token);
+      console.log("form valid token",req.user);
+      // if(req.query.email !== req.user?.email){
+      //   return res.status(403).send({message : "forbidden"})
+      // }
       if (req.query?.email) {
         query = { email: req.query.email };
       }
-
+      
       const result = await jobleloCollection.find(query).toArray();
       res.send(result);
     });
@@ -107,9 +150,12 @@ async function run() {
       // console.log(result);
       res.send(result);
     });
-    app.get("/appliedjobs", async (req, res) => {
+    app.get("/appliedjobs",verifyToken, async (req, res) => {
       let query = {};
       console.log(req.query);
+      if(req.query.email !== req.user.email){
+        return res.status(403).send({message : "forbidden"})
+      }
       if (req.query?.email && req.query?.id) {
         query = { email: req.query.email, id: req.query.id };
       } else if (req.query?.email) {
