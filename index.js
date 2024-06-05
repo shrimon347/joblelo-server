@@ -1,8 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-const jwt = require("jsonwebtoken")
-const cookieParser = require("cookie-parser")
+const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -13,33 +13,35 @@ const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster
 
 //middleware
 const corsConfig = {
-  origin: ["http://localhost:5173", "http://localhost:5174","https://joblelo-78ed0.web.app"],
+  origin: [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "https://joblelo-78ed0.web.app",
+  ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE"],
 };
 app.use(cors(corsConfig));
 app.use(express.json());
-app.use(cookieParser())
+app.use(cookieParser());
 
-
-//middleware 
-const verifyToken = async(req, res, next) =>{
-  const token = req.cookies?.token
-  console.log('values of token middleware', token);
-  if(!token) {
-    return res.status(401).send({message:"not authorized"})
+//middleware
+const verifyToken = async (req, res, next) => {
+  const token = req?.cookies?.token;
+  console.log("values of token middleware", token);
+  if (!token) {
+    return res.status(401).send({ message: "not hga authorized" });
   }
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decode) => {
-    if(err) {
-      return res.status(401).send({message:"Unauthorized"})
+    if (err) {
+      return res.status(401).send({ message: "Unauthorized" });
     }
-    console.log('values in the token', decode);
-    req.user = decode
-    next()
-  })
-}
-
-
+    console.log("values in the token", decode);
+    req.user = decode;
+    // console.log("83",req.user);
+    next();
+  });
+};
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -57,34 +59,34 @@ async function run() {
     const jobAppliedCollection = client.db("Joblelo").collection("AppliedJobs");
     const userCollection = client.db("Joblelo").collection("User");
 
-
     //auth related data
-    app.post('/jwt',async(req, res)=> {
-      const user = req.body
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
       console.log(user);
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn: '6h'})
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: "6h",
+      });
       res
-      .cookie('token', token, {
-        httpOnly : true,
-        secure : false,
-        sameSite : 'none'
-      })
-      .send({success:true})
-    })
-
+        .cookie("token", token, {
+          httpOnly: true,
+          secure: true,
+          sameSite: "None",
+        })
+        .send({ success: true });
+    });
 
     //services related data
-    app.get("/jobpost", async (req, res) => {
+    app.get("/jobpost",verifyToken, async (req, res) => {
       let query = {};
-      // console.log(req.cookies.token);
-      console.log("form valid token",req.user);
-      // if(req.query.email !== req.user?.email){
-      //   return res.status(403).send({message : "forbidden"})
-      // }
+      // console.log("form jonss",req?.cookies?.token);
+      // console.log("form valid token", req.user);
+      if(req.user.email !== req.query.email) {
+        return res.status(403).send({message:"forbidden access"})
+      }
       if (req.query?.email) {
         query = { email: req.query.email };
       }
-      
+
       const result = await jobleloCollection.find(query).toArray();
       res.send(result);
     });
@@ -139,26 +141,21 @@ async function run() {
     app.post("/appliedjobs", async (req, res) => {
       const newApply = req.body;
       const result = await jobAppliedCollection.insertOne(newApply);
-      // Increment the applicant number
       const jobId = new ObjectId(newApply.id);
-      // console.log(jobId);
       await jobleloCollection.updateOne(
         { _id: jobId },
         { $inc: { jobApplicantsNumber: 1 } }
       );
 
-      // console.log(result);
       res.send(result);
     });
-    app.get("/appliedjobs",verifyToken, async (req, res) => {
+    app.get("/appliedjobs", verifyToken, async (req, res) => {
       let query = {};
-      console.log(req.query);
-      if(req.query.email !== req.user.email){
-        return res.status(403).send({message : "forbidden"})
+      // console.log("apple", req.user);
+      if(req.user.email !== req.query.email) {
+        return res.status(403).send({message:"forbidden access"})
       }
-      if (req.query?.email && req.query?.id) {
-        query = { email: req.query.email, id: req.query.id };
-      } else if (req.query?.email) {
+      if (req.query?.email) {
         query = { email: req.query.email };
       }
       const result = await jobAppliedCollection.find(query).toArray();
@@ -185,8 +182,8 @@ async function run() {
     });
     app.get("/user/:email", async (req, res) => {
       const email = req.params.email;
-      const query = {email}
-      const result = await userCollection.findOne(query)
+      const query = { email };
+      const result = await userCollection.findOne(query);
       // console.log(result);
       res.send(result);
     });
